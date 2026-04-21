@@ -1,29 +1,113 @@
-from flask import Flask, render_template_string, jsonify, request
+from flask import Flask, render_template_string, jsonify, request, session, redirect, url_for
 import json
 import os
 from datetime import datetime
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 DB_FILE = 'timesheets_database.json'
 
 def get_database():
+    """Load the entire database structure"""
     if os.path.exists(DB_FILE):
-        with open(DB_FILE, 'r') as f:
-            return json.load(f)
-    return []
+        try:
+            with open(DB_FILE, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+    return {
+        "Matthew": [],
+        "Joan": []
+    }
 
-def save_database(db):
-    with open(DB_FILE, 'w') as f:
-        json.dump(db, f, indent=2)
+def get_user_timesheets(user):
+    """Get timesheets for a specific user"""
+    db = get_database()
+    return db.get(user, [])
 
-HTML_TEMPLATE = """
+def save_user_timesheets(user, timesheets):
+    """Save timesheets for a specific user"""
+    db = get_database()
+    db[user] = timesheets
+    try:
+        with open(DB_FILE, 'w') as f:
+            json.dump(db, f, indent=2)
+    except IOError as e:
+        print(f"Error saving database: {e}")
+
+def migrate_database():
+    """Migrate old flat array database to user-separated structure"""
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, 'r') as f:
+                data = json.load(f)
+            
+            if isinstance(data, list):
+                print("Migrating database to user-separated format...")
+                new_db = {
+                    "Matthew": data,
+                    "Joan": []
+                }
+                with open(DB_FILE, 'w') as f:
+                    json.dump(new_db, f, indent=2)
+                print("Migration complete!")
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Migration error: {e}")
+
+migrate_database()
+
+USER_SELECTION_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Consulting Timesheet</title>
+    <title>Select User - Timesheet</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen flex items-center justify-center">
+    <div class="bg-white rounded-lg shadow-xl p-12 max-w-md w-full">
+        <h1 class="text-4xl font-bold text-gray-800 mb-2 text-center">Timesheet App</h1>
+        <p class="text-gray-600 text-center mb-8">Select your user profile</p>
+        
+        <div class="space-y-4">
+            <form action="/select-user" method="POST">
+                <input type="hidden" name="user" value="Matthew">
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors shadow-md hover:shadow-lg transform hover:scale-105 duration-200">
+                    <div class="flex items-center justify-center gap-3">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                        </svg>
+                        <span class="text-xl">Matthew</span>
+                    </div>
+                </button>
+            </form>
+            
+            <form action="/select-user" method="POST">
+                <input type="hidden" name="user" value="Joan">
+                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors shadow-md hover:shadow-lg transform hover:scale-105 duration-200">
+                    <div class="flex items-center justify-center gap-3">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                        </svg>
+                        <span class="text-xl">Joan</span>
+                    </div>
+                </button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+TIMESHEET_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulting Timesheet - {{ current_user }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @media print {
@@ -35,7 +119,20 @@ HTML_TEMPLATE = """
 <body class="bg-gray-50">
     <div class="max-w-6xl mx-auto p-8 bg-white" id="timesheet">
         <div class="mb-8">
-            <h1 class="text-3xl font-bold text-gray-800 mb-6">Consulting Timesheet</h1>
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-800">Consulting Timesheet</h1>
+                <div class="flex items-center gap-4 no-print">
+                    <div class="bg-blue-100 text-blue-800 px-4 py-2 rounded-lg font-semibold">
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                        </svg>
+                        {{ current_user }}
+                    </div>
+                    <a href="/switch-user" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors text-sm">
+                        Switch User
+                    </a>
+                </div>
+            </div>
             
             <div class="grid grid-cols-2 gap-6 mb-6">
                 <div>
@@ -47,6 +144,7 @@ HTML_TEMPLATE = """
                         id="consultant"
                         class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="Your name"
+                        value="{{ current_user }}"
                     />
                 </div>
                 
@@ -113,7 +211,6 @@ HTML_TEMPLATE = """
                         </tr>
                     </thead>
                     <tbody id="entries-tbody">
-                        <!-- Rows will be added here -->
                     </tbody>
                 </table>
             </div>
@@ -182,7 +279,6 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-    <!-- Modal for viewing saved timesheets -->
     <div id="modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 no-print" onclick="closeModal(event)">
         <div class="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto" onclick="event.stopPropagation()">
             <div class="flex justify-between items-center mb-4">
@@ -313,7 +409,7 @@ HTML_TEMPLATE = """
                 });
                 
                 if (response.ok) {
-                    alert('Timesheet saved successfully to timesheets_database.json!');
+                    alert('Timesheet saved successfully!');
                 } else {
                     alert('Error saving timesheet');
                 }
@@ -376,11 +472,9 @@ HTML_TEMPLATE = """
                 document.getElementById('period').value = timesheet.period;
                 document.getElementById('rate').value = timesheet.rate;
                 
-                // Clear existing entries
                 document.getElementById('entries-tbody').innerHTML = '';
                 entryId = 0;
                 
-                // Load entries
                 timesheet.entries.forEach(function(entry) {
                     addEntry();
                     const row = document.getElementById('entry-' + entryId);
@@ -428,7 +522,6 @@ HTML_TEMPLATE = """
             }, 100);
         }
 
-        // Add initial entry
         addEntry();
     </script>
 </body>
@@ -437,26 +530,64 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    return render_template_string(USER_SELECTION_TEMPLATE)
+
+@app.route('/select-user', methods=['POST'])
+def select_user():
+    user = request.form.get('user')
+    if user in ['Matthew', 'Joan']:
+        session['user'] = user
+        return redirect(url_for('timesheet'))
+    return redirect(url_for('index'))
+
+@app.route('/switch-user')
+def switch_user():
+    session.pop('user', None)
+    return redirect(url_for('index'))
+
+@app.route('/timesheet')
+def timesheet():
+    if 'user' not in session:
+        return redirect(url_for('index'))
+    return render_template_string(TIMESHEET_TEMPLATE, current_user=session['user'])
 
 @app.route('/api/timesheets', methods=['GET'])
 def get_timesheets():
-    return jsonify(get_database())
+    if 'user' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    user = session['user']
+    user_timesheets = get_user_timesheets(user)
+    return jsonify(user_timesheets)
 
 @app.route('/api/timesheets', methods=['POST'])
-def save_timesheet():
+def save_timesheet_route():
+    if 'user' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    user = session['user']
     timesheet = request.json
-    db = get_database()
-    db.append(timesheet)
-    save_database(db)
+    
+    user_timesheets = get_user_timesheets(user)
+    user_timesheets.append(timesheet)
+    
+    save_user_timesheets(user, user_timesheets)
+    
     return jsonify({'success': True})
 
 @app.route('/api/timesheets/<int:timesheet_id>', methods=['DELETE'])
 def delete_timesheet(timesheet_id):
-    db = get_database()
-    db = [t for t in db if t['id'] != timesheet_id]
-    save_database(db)
+    if 'user' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    user = session['user']
+    
+    user_timesheets = get_user_timesheets(user)
+    user_timesheets = [t for t in user_timesheets if t['id'] != timesheet_id]
+    
+    save_user_timesheets(user, user_timesheets)
+    
     return jsonify({'success': True})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)

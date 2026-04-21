@@ -1,1 +1,144 @@
-[]
+{
+  "Matthew": [
+    {
+      "id": 1770694944347,
+      "savedDate": "2026-02-10T03:42:24.347Z",
+      "consultant": "Ocean's Edge Consulting",
+      "client": "Panopticon Privacy Law",
+      "period": "Dec 1 - Feb 9",
+      "rate": 75,
+      "entries": [
+        {
+          "date": "2026-02-09",
+          "project": "Panopticon Privacy Law Introduction Work",
+          "description": "1. Set up simple crawler application for use to crawl pages for Privacy Violations\n2. Set up more comprehensive crawler for deeper crawls of pages for Privacy Violations.\n3. Set up Panopticon Privacy Law landing page\n4. Set up an application that analyzes .har files to review Privacy Violation crawler work.",
+          "hours": 15
+        }
+      ],
+      "totalHours": 15,
+      "totalAmount": 1125
+    },
+    {
+      "id": 1771480870430,
+      "savedDate": "2026-02-19T06:01:10.430Z",
+      "consultant": "Ocean's Edge Consulting",
+      "client": "Panopticon Privacy Law",
+      "period": "Feb 10 - Feb 20",
+      "rate": 75,
+      "entries": [
+        {
+          "date": "2026-02-18",
+          "project": "Panopticon Privacy Law Development Work",
+          "description": "Items worked on during this period:\n1. Deployed simple crawler tool to Render application\n2. Updated simple crawler tool locally to save and provide downloadable har file\n3. Deployed Har Analyzer Tool to Render application",
+          "hours": 3
+        }
+      ],
+      "totalHours": 3,
+      "totalAmount": 225
+    },
+    {
+      "id": 1771613260463,
+      "savedDate": "2026-02-20T18:47:40.463Z",
+      "consultant": "Ocean's Edge Consulting",
+      "client": "Alpha Encoded",
+      "period": "Feb 2 - 20",
+      "rate": 45,
+      "entries": [
+        {
+          "date": "2026-02-09",
+          "project": "Fidalgo Coffee Preliminary Setup",
+          "description": "- Set up new JIRA project board for Fidalgo Coffee\n- Set up Confluence pages for Fidalgo Coffee Project",
+          "hours": 5
+        },
+        {
+          "date": "2026-02-20",
+          "project": "Fidalgo Coffee Additional Setup",
+          "description": "- Added additional documents to JIRA project\n- Sync with AE regarding status, review work done, next steps",
+          "hours": 2
+        }
+      ],
+      "totalHours": 7,
+      "totalAmount": 315
+    },
+    {
+      "id": 1772698374676,
+      "savedDate": "2026-03-05T08:12:54.676Z",
+      "consultant": "Ocean's Edge Consulting",
+      "client": "Panopticon Privacy Law",
+      "period": "Feb 23 - Mar 6",
+      "rate": 75,
+      "entries": [
+        {
+          "date": "2026-03-05",
+          "project": "Panopticon Privacy Law Development Work",
+          "description": "Items worked on during this period:\n1. Updated render instance to be on starter tier ($7 a month)\n2. Updated application to read Shopify Pages\n3. Updated application to read privacy and terms pages\n4. Quality of life changes for timezone reading\n5. Better handling for memory issues",
+          "hours": 4
+        }
+      ],
+      "totalHours": 4,
+      "totalAmount": 300
+    },
+    {
+      "id": 1775078080894,
+      "savedDate": "2026-04-01T21:14:40.894Z",
+      "consultant": "Ocean's Edge Consulting",
+      "client": "Panopticon Privacy Law",
+      "period": "Mar 9 - Apr 1",
+      "rate": 75,
+      "entries": [
+        {
+          "date": "2026-03-09",
+          "project": "Simple Crawler",
+          "description": "Updated simple crawler for better page targeting",
+          "hours": 1
+        },
+        {
+          "date": "2026-03-10",
+          "project": "Simple Crawler",
+          "description": "Updated simple crawler to crawl an additional page to test memory load",
+          "hours": 1
+        },
+        {
+          "date": "2026-03-11",
+          "project": "Simple Crawler",
+          "description": "1, Updated simple crawler to reduce HAR file to only generate on main page of crawling\n2. Worked with founding partner on privacy manual crawling to find privacy violations",
+          "hours": 2
+        },
+        {
+          "date": "2026-03-18",
+          "project": "Simple Crawler",
+          "description": "1. Updated handling for memory saving by sequentially loading in pages and closing those already crawled\n2. Updated targeting priorities for links such as \"apply\" or \"apply now\"\n3. Updated tiebreaker scoring logic to handle situations where there's a shared score value.\n4. updated UI to explain new systems in detail to user.",
+          "hours": 1
+        },
+        {
+          "date": "2026-04-01",
+          "project": "Simple Crawler",
+          "description": "1. Prepared batch loading of URLs into crawler\n2. Added csv template file to UI\n3. Added jobs separation for preparing multiple urls per batch\n4. Added downloadable CSV file for each job.",
+          "hours": 3
+        }
+      ],
+      "totalHours": 8,
+      "totalAmount": 600
+    }
+  ],
+  "Joan": [
+    {
+      "id": 1776792318104,
+      "savedDate": "2026-04-21T17:25:18.104Z",
+      "consultant": "Joan",
+      "client": "Sample Sheet",
+      "period": "April 1 - 31",
+      "rate": 150,
+      "entries": [
+        {
+          "date": "2026-04-21",
+          "project": "Sample",
+          "description": "Sample",
+          "hours": 1
+        }
+      ],
+      "totalHours": 1,
+      "totalAmount": 150
+    }
+  ]
+}
