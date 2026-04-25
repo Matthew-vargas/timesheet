@@ -6,7 +6,41 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-DB_FILE = 'timesheets_database.json'
+# On Render, store the database on the persistent disk outside the source tree
+# so redeploys don't overwrite production data. Locally, use the current directory.
+if os.environ.get('RENDER'):
+    DB_FILE = '/opt/render/project/data/timesheets_database.json'
+else:
+    DB_FILE = 'timesheets_database.json'
+
+def setup_database_path():
+    """Ensure the data directory exists and migrate existing data if needed."""
+    data_dir = os.path.dirname(DB_FILE)
+    if data_dir:
+        os.makedirs(data_dir, exist_ok=True)
+
+    # If no database exists at the target path yet, check if there's existing
+    # data at the old source-tree path and migrate it over automatically.
+    if not os.path.exists(DB_FILE):
+        old_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'timesheets_database.json')
+        if os.path.exists(old_path) and old_path != os.path.abspath(DB_FILE):
+            try:
+                import shutil
+                shutil.copy2(old_path, DB_FILE)
+                print(f"Migrated existing database from {old_path} to {DB_FILE}")
+            except (IOError, OSError) as e:
+                print(f"Migration copy failed: {e}")
+
+    # If still no file (first boot with no prior data), seed an empty database.
+    if not os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, 'w') as f:
+                json.dump({"Matthew": [], "Joan": []}, f, indent=2)
+            print(f"Created fresh database at {DB_FILE}")
+        except IOError as e:
+            print(f"Error creating database: {e}")
+
+setup_database_path()
 
 def get_database():
     """Load the entire database structure"""
@@ -241,6 +275,10 @@ TIMESHEET_TEMPLATE = """
             </div>
         </div>
 
+        <div id="editing-banner" class="hidden mb-4 px-4 py-2 bg-yellow-50 border border-yellow-300 rounded-md text-yellow-800 text-sm font-medium no-print">
+            ✏️ Editing existing timesheet — <strong>Save Timesheet</strong> will overwrite it, or use <strong>Save as New</strong> to create a copy.
+        </div>
+
         <div class="mt-8 flex gap-4 no-print flex-wrap">
             <button
                 onclick="saveTimesheet()"
@@ -250,6 +288,17 @@ TIMESHEET_TEMPLATE = """
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
                 </svg>
                 Save Timesheet
+            </button>
+
+            <button
+                id="save-as-new-btn"
+                onclick="saveAsNew()"
+                class="hidden flex items-center gap-2 px-6 py-3 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors font-medium"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path>
+                </svg>
+                Save as New
             </button>
             
             <button
@@ -295,6 +344,7 @@ TIMESHEET_TEMPLATE = """
 
     <script>
         let entryId = 0;
+        let currentTimesheetId = null;
 
         function addEntry() {
             entryId++;
@@ -354,7 +404,7 @@ TIMESHEET_TEMPLATE = """
             }
         }
 
-        async function saveTimesheet() {
+        function buildTimesheetPayload(overrideId) {
             const consultant = document.getElementById('consultant').value;
             const client = document.getElementById('client').value;
             const period = document.getElementById('period').value;
@@ -362,18 +412,16 @@ TIMESHEET_TEMPLATE = """
 
             if (!consultant || !client || !period) {
                 alert('Please fill in Consultant Name, Client Name, and Period before saving.');
-                return;
+                return null;
             }
 
             const entries = [];
             const rows = document.querySelectorAll('#entries-tbody tr');
-            
             rows.forEach(function(row) {
                 const date = row.querySelector('.entry-date').value;
                 const project = row.querySelector('.entry-project').value;
                 const description = row.querySelector('.entry-description').value;
                 const hours = row.querySelector('.entry-hours').value;
-                
                 if (date || project || description || hours) {
                     entries.push({
                         date: date,
@@ -386,20 +434,53 @@ TIMESHEET_TEMPLATE = """
 
             if (entries.length === 0) {
                 alert('Please add at least one time entry before saving.');
-                return;
+                return null;
             }
 
-            const timesheet = {
-                id: Date.now(),
+            const totalHours = parseFloat(document.getElementById('total-hours').textContent);
+            return {
+                id: overrideId !== undefined ? overrideId : Date.now(),
                 savedDate: new Date().toISOString(),
                 consultant: consultant,
                 client: client,
                 period: period,
                 rate: parseFloat(rate) || 0,
                 entries: entries,
-                totalHours: parseFloat(document.getElementById('total-hours').textContent),
-                totalAmount: rate ? parseFloat(document.getElementById('total-hours').textContent) * parseFloat(rate) : 0
+                totalHours: totalHours,
+                totalAmount: rate ? totalHours * parseFloat(rate) : 0
             };
+        }
+
+        async function saveTimesheet() {
+            const isUpdate = currentTimesheetId !== null;
+            const timesheet = buildTimesheetPayload(isUpdate ? currentTimesheetId : undefined);
+            if (!timesheet) return;
+
+            try {
+                const url = isUpdate ? '/api/timesheets/' + currentTimesheetId : '/api/timesheets';
+                const method = isUpdate ? 'PUT' : 'POST';
+
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(timesheet)
+                });
+
+                if (response.ok) {
+                    currentTimesheetId = timesheet.id;
+                    alert(isUpdate ? 'Timesheet updated successfully!' : 'Timesheet saved successfully!');
+                    updateEditingBanner();
+                } else {
+                    alert('Error saving timesheet');
+                }
+            } catch (error) {
+                alert('Error saving timesheet: ' + error.message);
+            }
+        }
+
+        async function saveAsNew() {
+            const timesheet = buildTimesheetPayload();  // always generates a fresh Date.now() id
+            if (!timesheet) return;
 
             try {
                 const response = await fetch('/api/timesheets', {
@@ -407,14 +488,16 @@ TIMESHEET_TEMPLATE = """
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(timesheet)
                 });
-                
+
                 if (response.ok) {
-                    alert('Timesheet saved successfully!');
+                    currentTimesheetId = timesheet.id;
+                    alert('Saved as a new timesheet!');
+                    updateEditingBanner();
                 } else {
-                    alert('Error saving timesheet');
+                    alert('Error saving new timesheet');
                 }
             } catch (error) {
-                alert('Error saving timesheet: ' + error.message);
+                alert('Error saving new timesheet: ' + error.message);
             }
         }
 
@@ -445,7 +528,7 @@ TIMESHEET_TEMPLATE = """
                                     '</div>' +
                                 '</div>' +
                                 '<div class="flex gap-2 mt-3">' +
-                                    '<button onclick="loadTimesheet(' + index + ')" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">Load</button>' +
+                                    '<button onclick="loadTimesheet(' + timesheet.id + ')" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">Load</button>' +
                                     '<button onclick="deleteTimesheet(' + timesheet.id + ')" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">Delete</button>' +
                                 '</div>' +
                             '</div>';
@@ -461,11 +544,16 @@ TIMESHEET_TEMPLATE = """
             }
         }
 
-        async function loadTimesheet(index) {
+        async function loadTimesheet(id) {
             try {
                 const response = await fetch('/api/timesheets');
                 const db = await response.json();
-                const timesheet = db[index];
+                const timesheet = db.find(function(t) { return t.id === id; });
+
+                if (!timesheet) {
+                    alert('Could not find that timesheet.');
+                    return;
+                }
                 
                 document.getElementById('consultant').value = timesheet.consultant;
                 document.getElementById('client').value = timesheet.client;
@@ -484,7 +572,9 @@ TIMESHEET_TEMPLATE = """
                     row.querySelector('.entry-hours').value = entry.hours;
                 });
                 
+                currentTimesheetId = timesheet.id;
                 calculateTotals();
+                updateEditingBanner();
                 closeModal();
             } catch (error) {
                 alert('Error loading timesheet: ' + error.message);
@@ -513,6 +603,18 @@ TIMESHEET_TEMPLATE = """
             if (!event || event.target.id === 'modal') {
                 document.getElementById('modal').classList.add('hidden');
                 document.getElementById('modal').classList.remove('flex');
+            }
+        }
+
+        function updateEditingBanner() {
+            const banner = document.getElementById('editing-banner');
+            const saveAsNewBtn = document.getElementById('save-as-new-btn');
+            if (currentTimesheetId !== null) {
+                banner.classList.remove('hidden');
+                saveAsNewBtn.classList.remove('hidden');
+            } else {
+                banner.classList.add('hidden');
+                saveAsNewBtn.classList.add('hidden');
             }
         }
 
@@ -574,6 +676,23 @@ def save_timesheet_route():
     save_user_timesheets(user, user_timesheets)
     
     return jsonify({'success': True})
+
+@app.route('/api/timesheets/<int:timesheet_id>', methods=['PUT'])
+def update_timesheet(timesheet_id):
+    if 'user' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    user = session['user']
+    timesheet = request.json
+
+    user_timesheets = get_user_timesheets(user)
+    for i, t in enumerate(user_timesheets):
+        if t['id'] == timesheet_id:
+            user_timesheets[i] = timesheet
+            save_user_timesheets(user, user_timesheets)
+            return jsonify({'success': True})
+
+    return jsonify({'error': 'Timesheet not found'}), 404
 
 @app.route('/api/timesheets/<int:timesheet_id>', methods=['DELETE'])
 def delete_timesheet(timesheet_id):

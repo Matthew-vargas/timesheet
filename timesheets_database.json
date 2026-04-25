@@ -119,6 +119,36 @@
       ],
       "totalHours": 8,
       "totalAmount": 600
+    },
+    {
+      "id": 1777007120865,
+      "savedDate": "2026-04-25T05:54:18.734Z",
+      "consultant": "Ocean's Edge Consulting",
+      "client": "Panopticon Privacy Law",
+      "period": "Apr 1 - 31",
+      "rate": 75,
+      "entries": [
+        {
+          "date": "2026-04-22",
+          "project": "Case Status Project",
+          "description": "1. Set up case status project\n2. deployed case status project to render\n3. updated timesheet application and deployed to render",
+          "hours": 4
+        },
+        {
+          "date": "2026-04-23",
+          "project": "Case Status Project",
+          "description": "1. Update case status project based on feedback\n2. Updated render instance for case status project to keep json data\n",
+          "hours": 2
+        },
+        {
+          "date": "2026-04-24",
+          "project": "Timesheet Updates",
+          "description": "1. Made updates to Timesheet application\n2. Updated Render tier for timesheet application",
+          "hours": 1
+        }
+      ],
+      "totalHours": 7,
+      "totalAmount": 525
     }
   ],
   "Joan": [
