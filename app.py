@@ -198,12 +198,28 @@ TIMESHEET_TEMPLATE = """
                     <label class="block text-sm font-medium text-gray-700 mb-2">
                         Period
                     </label>
-                    <input
-                        type="text"
-                        id="period"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="e.g., Dec 1-15, 2024"
-                    />
+                    <div class="flex items-center gap-2">
+                        <div class="flex flex-col flex-1">
+                            <span class="text-xs text-gray-500 mb-1">From</span>
+                            <input
+                                type="date"
+                                id="period-from"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onchange="updatePeriodString()"
+                            />
+                        </div>
+                        <span class="mt-4 text-gray-500">—</span>
+                        <div class="flex flex-col flex-1">
+                            <span class="text-xs text-gray-500 mb-1">To</span>
+                            <input
+                                type="date"
+                                id="period-to"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onchange="updatePeriodString()"
+                            />
+                        </div>
+                    </div>
+                    <input type="hidden" id="period" />
                 </div>
                 
                 <div>
@@ -231,13 +247,16 @@ TIMESHEET_TEMPLATE = """
                                 Date
                             </th>
                             <th class="border border-gray-300 px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                                Type
+                            </th>
+                            <th class="border border-gray-300 px-4 py-3 text-left text-sm font-semibold text-gray-700">
                                 Project/Task
                             </th>
                             <th class="border border-gray-300 px-4 py-3 text-left text-sm font-semibold text-gray-700">
                                 Description
                             </th>
                             <th class="border border-gray-300 px-4 py-3 text-left text-sm font-semibold text-gray-700">
-                                Hours
+                                Hours / Amount
                             </th>
                             <th class="border border-gray-300 px-4 py-3 text-center text-sm font-semibold text-gray-700 no-print">
                                 Action
@@ -346,15 +365,23 @@ TIMESHEET_TEMPLATE = """
         let entryId = 0;
         let currentTimesheetId = null;
 
-        function addEntry() {
+        function addEntry(type) {
             entryId++;
             const tbody = document.getElementById('entries-tbody');
             const row = document.createElement('tr');
             row.className = 'hover:bg-gray-50';
             row.id = 'entry-' + entryId;
+            const currentType = type || 'hours';
+            const isExpense = currentType === 'expense';
             row.innerHTML = 
                 '<td class="border border-gray-300 px-2 py-2">' +
                     '<input type="date" class="entry-date w-full px-2 py-1 border-0 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded" />' +
+                '</td>' +
+                '<td class="border border-gray-300 px-2 py-2">' +
+                    '<select class="entry-type w-full px-2 py-1 border border-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded bg-white text-sm" onchange="toggleEntryType(this, ' + entryId + ')">' +
+                        '<option value="hours"' + (!isExpense ? ' selected' : '') + '>Hours</option>' +
+                        '<option value="expense"' + (isExpense ? ' selected' : '') + '>Expense</option>' +
+                    '</select>' +
                 '</td>' +
                 '<td class="border border-gray-300 px-2 py-2">' +
                     '<input type="text" class="entry-project w-full px-2 py-1 border-0 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded" placeholder="Project name" />' +
@@ -363,7 +390,15 @@ TIMESHEET_TEMPLATE = """
                     '<textarea class="entry-description w-full px-2 py-1 border-0 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded resize-y min-h-[2.5rem]" placeholder="Work description" rows="2"></textarea>' +
                 '</td>' +
                 '<td class="border border-gray-300 px-2 py-2">' +
-                    '<input type="number" class="hours-input entry-hours w-full px-2 py-1 border-0 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded" placeholder="0.0" step="0.25" min="0" oninput="calculateTotals()" />' +
+                    '<div class="relative">' +
+                        (isExpense ? '<span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>' : '') +
+                        '<input type="number" ' +
+                            'class="' + (isExpense ? 'expense-input entry-amount' : 'hours-input entry-hours') + ' w-full px-2 py-1 ' + (isExpense ? 'pl-5' : '') + ' border-0 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded" ' +
+                            'placeholder="' + (isExpense ? '0.00' : '0.0') + '" ' +
+                            'step="' + (isExpense ? '0.01' : '0.25') + '" ' +
+                            'min="0" ' +
+                            'oninput="calculateTotals()" />' +
+                    '</div>' +
                 '</td>' +
                 '<td class="border border-gray-300 px-2 py-2 text-center no-print">' +
                     '<button onclick="removeEntry(' + entryId + ')" class="text-red-600 hover:text-red-800 p-1">' +
@@ -375,6 +410,23 @@ TIMESHEET_TEMPLATE = """
             tbody.appendChild(row);
         }
 
+        function toggleEntryType(select, id) {
+            const row = document.getElementById('entry-' + id);
+            const isExpense = select.value === 'expense';
+            const cell = row.querySelector('td:nth-child(5)');
+            cell.innerHTML =
+                '<div class="relative">' +
+                    (isExpense ? '<span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>' : '') +
+                    '<input type="number" ' +
+                        'class="' + (isExpense ? 'expense-input entry-amount' : 'hours-input entry-hours') + ' w-full px-2 py-1 ' + (isExpense ? 'pl-5' : '') + ' border-0 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded" ' +
+                        'placeholder="' + (isExpense ? '0.00' : '0.0') + '" ' +
+                        'step="' + (isExpense ? '0.01' : '0.25') + '" ' +
+                        'min="0" ' +
+                        'oninput="calculateTotals()" />' +
+                '</div>';
+            calculateTotals();
+        }
+
         function removeEntry(id) {
             const row = document.getElementById('entry-' + id);
             if (row) {
@@ -384,19 +436,24 @@ TIMESHEET_TEMPLATE = """
         }
 
         function calculateTotals() {
-            const hoursInputs = document.querySelectorAll('.hours-input');
             let totalHours = 0;
-            
-            hoursInputs.forEach(function(input) {
-                const value = parseFloat(input.value) || 0;
-                totalHours += value;
+            let totalExpenses = 0;
+
+            document.querySelectorAll('.hours-input').forEach(function(input) {
+                totalHours += parseFloat(input.value) || 0;
             });
-            
+
+            document.querySelectorAll('.expense-input').forEach(function(input) {
+                totalExpenses += parseFloat(input.value) || 0;
+            });
+
             document.getElementById('total-hours').textContent = totalHours.toFixed(2);
-            
+
             const rate = parseFloat(document.getElementById('rate').value) || 0;
-            if (rate > 0) {
-                const totalAmount = totalHours * rate;
+            const hoursAmount = totalHours * rate;
+            const totalAmount = hoursAmount + totalExpenses;
+
+            if (rate > 0 || totalExpenses > 0) {
                 document.getElementById('total-amount').textContent = '$' + totalAmount.toFixed(2);
                 document.getElementById('total-amount-row').style.display = 'flex';
             } else {
@@ -404,30 +461,59 @@ TIMESHEET_TEMPLATE = """
             }
         }
 
+        function updatePeriodString() {
+            const fromVal = document.getElementById('period-from').value;
+            const toVal = document.getElementById('period-to').value;
+            let periodStr = '';
+            if (fromVal && toVal) {
+                const fromDate = new Date(fromVal + 'T00:00:00');
+                const toDate = new Date(toVal + 'T00:00:00');
+                const fmt = { month: 'short', day: 'numeric' };
+                periodStr = fromDate.toLocaleDateString('en-US', fmt) + ' - ' + toDate.toLocaleDateString('en-US', fmt);
+            }
+            document.getElementById('period').value = periodStr;
+        }
+
         function buildTimesheetPayload(overrideId) {
             const consultant = document.getElementById('consultant').value;
             const client = document.getElementById('client').value;
-            const period = document.getElementById('period').value;
+            const periodFrom = document.getElementById('period-from').value;
+            const periodTo = document.getElementById('period-to').value;
             const rate = document.getElementById('rate').value;
 
-            if (!consultant || !client || !period) {
-                alert('Please fill in Consultant Name, Client Name, and Period before saving.');
+            if (!consultant || !client || !periodFrom || !periodTo) {
+                alert('Please fill in Consultant Name, Client Name, and both Period dates before saving.');
                 return null;
             }
+
+            // Build human-readable period string
+            const fromDate = new Date(periodFrom + 'T00:00:00');
+            const toDate = new Date(periodTo + 'T00:00:00');
+            const fmt = { month: 'short', day: 'numeric' };
+            const period = fromDate.toLocaleDateString('en-US', fmt) + ' - ' + toDate.toLocaleDateString('en-US', fmt);
 
             const entries = [];
             const rows = document.querySelectorAll('#entries-tbody tr');
             rows.forEach(function(row) {
                 const date = row.querySelector('.entry-date').value;
+                const typeSelect = row.querySelector('.entry-type');
+                const entryType = typeSelect ? typeSelect.value : 'hours';
                 const project = row.querySelector('.entry-project').value;
                 const description = row.querySelector('.entry-description').value;
-                const hours = row.querySelector('.entry-hours').value;
-                if (date || project || description || hours) {
+                const hoursInput = row.querySelector('.entry-hours');
+                const amountInput = row.querySelector('.entry-amount');
+                const value = entryType === 'expense'
+                    ? (parseFloat(amountInput ? amountInput.value : 0) || 0)
+                    : (parseFloat(hoursInput ? hoursInput.value : 0) || 0);
+
+                if (date || project || description || value) {
                     entries.push({
                         date: date,
+                        type: entryType,
                         project: project,
                         description: description,
-                        hours: parseFloat(hours) || 0
+                        hours: entryType === 'hours' ? value : 0,
+                        amount: entryType === 'expense' ? value : 0
                     });
                 }
             });
@@ -437,17 +523,27 @@ TIMESHEET_TEMPLATE = """
                 return null;
             }
 
-            const totalHours = parseFloat(document.getElementById('total-hours').textContent);
+            let totalHours = 0;
+            let totalExpenses = 0;
+            entries.forEach(function(e) {
+                totalHours += e.hours || 0;
+                totalExpenses += e.amount || 0;
+            });
+            const rateVal = parseFloat(rate) || 0;
+            const totalAmount = (totalHours * rateVal) + totalExpenses;
+
             return {
                 id: overrideId !== undefined ? overrideId : Date.now(),
                 savedDate: new Date().toISOString(),
                 consultant: consultant,
                 client: client,
                 period: period,
-                rate: parseFloat(rate) || 0,
+                periodFrom: periodFrom,
+                periodTo: periodTo,
+                rate: rateVal,
                 entries: entries,
                 totalHours: totalHours,
-                totalAmount: rate ? totalHours * parseFloat(rate) : 0
+                totalAmount: totalAmount
             };
         }
 
@@ -557,19 +653,36 @@ TIMESHEET_TEMPLATE = """
                 
                 document.getElementById('consultant').value = timesheet.consultant;
                 document.getElementById('client').value = timesheet.client;
-                document.getElementById('period').value = timesheet.period;
                 document.getElementById('rate').value = timesheet.rate;
-                
+
+                // Restore period date fields
+                if (timesheet.periodFrom && timesheet.periodTo) {
+                    document.getElementById('period-from').value = timesheet.periodFrom;
+                    document.getElementById('period-to').value = timesheet.periodTo;
+                } else {
+                    // Legacy fallback: period was a freeform string, leave dates blank
+                    document.getElementById('period-from').value = '';
+                    document.getElementById('period-to').value = '';
+                }
+                updatePeriodString();
+
                 document.getElementById('entries-tbody').innerHTML = '';
                 entryId = 0;
                 
                 timesheet.entries.forEach(function(entry) {
-                    addEntry();
+                    const entryType = entry.type || 'hours';
+                    addEntry(entryType);
                     const row = document.getElementById('entry-' + entryId);
                     row.querySelector('.entry-date').value = entry.date;
                     row.querySelector('.entry-project').value = entry.project;
                     row.querySelector('.entry-description').value = entry.description;
-                    row.querySelector('.entry-hours').value = entry.hours;
+                    if (entryType === 'expense') {
+                        const amountInput = row.querySelector('.entry-amount');
+                        if (amountInput) amountInput.value = entry.amount || 0;
+                    } else {
+                        const hoursInput = row.querySelector('.entry-hours');
+                        if (hoursInput) hoursInput.value = entry.hours || 0;
+                    }
                 });
                 
                 currentTimesheetId = timesheet.id;
