@@ -1,95 +1,32 @@
 from flask import Flask, render_template_string, jsonify, request, session, redirect, url_for
-import json
 import os
-from datetime import datetime
+from dotenv import load_dotenv
+import pymongo
+
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# On Render, store the database on the persistent disk outside the source tree
-# so redeploys don't overwrite production data. Locally, use the current directory.
-if os.environ.get('RENDER'):
-    DB_FILE = '/opt/render/project/data/timesheets_database.json'
-else:
-    DB_FILE = 'timesheets_database.json'
-
-def setup_database_path():
-    """Ensure the data directory exists and migrate existing data if needed."""
-    data_dir = os.path.dirname(DB_FILE)
-    if data_dir:
-        os.makedirs(data_dir, exist_ok=True)
-
-    # If no database exists at the target path yet, check if there's existing
-    # data at the old source-tree path and migrate it over automatically.
-    if not os.path.exists(DB_FILE):
-        old_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'timesheets_database.json')
-        if os.path.exists(old_path) and old_path != os.path.abspath(DB_FILE):
-            try:
-                import shutil
-                shutil.copy2(old_path, DB_FILE)
-                print(f"Migrated existing database from {old_path} to {DB_FILE}")
-            except (IOError, OSError) as e:
-                print(f"Migration copy failed: {e}")
-
-    # If still no file (first boot with no prior data), seed an empty database.
-    if not os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, 'w') as f:
-                json.dump({"Matthew": [], "Joan": []}, f, indent=2)
-            print(f"Created fresh database at {DB_FILE}")
-        except IOError as e:
-            print(f"Error creating database: {e}")
-
-setup_database_path()
-
-def get_database():
-    """Load the entire database structure"""
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, 'r') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            pass
-    return {
-        "Matthew": [],
-        "Joan": []
-    }
-
-def get_user_timesheets(user):
-    """Get timesheets for a specific user"""
-    db = get_database()
-    return db.get(user, [])
-
-def save_user_timesheets(user, timesheets):
-    """Save timesheets for a specific user"""
-    db = get_database()
-    db[user] = timesheets
+# --- MongoDB connection ---
+def connect_db():
+    """Connect to MongoDB Atlas and return the timesheets collection."""
+    mongo_uri = os.environ.get('MONGO_URI')
+    if not mongo_uri:
+        raise RuntimeError('MONGO_URI is not set. Add it to your .env file or Render environment variables.')
     try:
-        with open(DB_FILE, 'w') as f:
-            json.dump(db, f, indent=2)
-    except IOError as e:
-        print(f"Error saving database: {e}")
+        client = pymongo.MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+        # Verify the connection is live before returning
+        client.server_info()
+        db = client['OceansEdge']
+        print('Connected to MongoDB: OceansEdge')
+        return db['timesheets']
+    except pymongo.errors.ServerSelectionTimeoutError as e:
+        raise RuntimeError(f'Could not connect to MongoDB: {e}')
 
-def migrate_database():
-    """Migrate old flat array database to user-separated structure"""
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, 'r') as f:
-                data = json.load(f)
-            
-            if isinstance(data, list):
-                print("Migrating database to user-separated format...")
-                new_db = {
-                    "Matthew": data,
-                    "Joan": []
-                }
-                with open(DB_FILE, 'w') as f:
-                    json.dump(new_db, f, indent=2)
-                print("Migration complete!")
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"Migration error: {e}")
+timesheets_collection = connect_db()
 
-migrate_database()
+
 
 USER_SELECTION_TEMPLATE = """
 <!DOCTYPE html>
@@ -770,24 +707,21 @@ def timesheet():
 def get_timesheets():
     if 'user' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
-    
+
     user = session['user']
-    user_timesheets = get_user_timesheets(user)
-    return jsonify(user_timesheets)
+    docs = list(timesheets_collection.find({'user': user}, {'_id': 0}))
+    return jsonify(docs)
 
 @app.route('/api/timesheets', methods=['POST'])
 def save_timesheet_route():
     if 'user' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
-    
+
     user = session['user']
     timesheet = request.json
-    
-    user_timesheets = get_user_timesheets(user)
-    user_timesheets.append(timesheet)
-    
-    save_user_timesheets(user, user_timesheets)
-    
+    timesheet['user'] = user
+    timesheet.pop('_id', None)
+    timesheets_collection.insert_one(timesheet)
     return jsonify({'success': True})
 
 @app.route('/api/timesheets/<int:timesheet_id>', methods=['PUT'])
@@ -797,29 +731,76 @@ def update_timesheet(timesheet_id):
 
     user = session['user']
     timesheet = request.json
+    timesheet['user'] = user
+    timesheet.pop('_id', None)
 
-    user_timesheets = get_user_timesheets(user)
-    for i, t in enumerate(user_timesheets):
-        if t['id'] == timesheet_id:
-            user_timesheets[i] = timesheet
-            save_user_timesheets(user, user_timesheets)
-            return jsonify({'success': True})
+    result = timesheets_collection.replace_one(
+        {'id': timesheet_id, 'user': user},
+        timesheet
+    )
 
-    return jsonify({'error': 'Timesheet not found'}), 404
+    if result.matched_count == 0:
+        return jsonify({'error': 'Timesheet not found'}), 404
+
+    return jsonify({'success': True})
 
 @app.route('/api/timesheets/<int:timesheet_id>', methods=['DELETE'])
 def delete_timesheet(timesheet_id):
     if 'user' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
-    
+
     user = session['user']
-    
-    user_timesheets = get_user_timesheets(user)
-    user_timesheets = [t for t in user_timesheets if t['id'] != timesheet_id]
-    
-    save_user_timesheets(user, user_timesheets)
-    
+    timesheets_collection.delete_one({'id': timesheet_id, 'user': user})
     return jsonify({'success': True})
+
+@app.route('/admin/import', methods=['POST'])
+def import_data():
+    """
+    One-time import of JSON data into MongoDB.
+    POST the contents of your exported timesheets_export.json as the request body.
+    Safe to run multiple times — skips any timesheet whose ID already exists in MongoDB.
+
+    Example curl command:
+        curl -X POST http://localhost:5000/admin/import \
+             -H "Content-Type: application/json" \
+             -d @timesheets_export.json
+    """
+    try:
+        data = request.json
+        if not data or not isinstance(data, dict):
+            return jsonify({'error': 'Invalid JSON — expected an object with user keys e.g. {"Matthew": [...], "Joan": [...]}'}), 400
+
+        inserted = 0
+        skipped = 0
+
+        for user, timesheets in data.items():
+            if not isinstance(timesheets, list):
+                continue
+            for timesheet in timesheets:
+                timesheet_id = timesheet.get('id')
+                if timesheet_id is None:
+                    skipped += 1
+                    continue
+                # Skip if already exists in MongoDB
+                if timesheets_collection.find_one({'id': timesheet_id}):
+                    skipped += 1
+                    continue
+                doc = dict(timesheet)
+                doc['user'] = user
+                # Remove MongoDB's _id if somehow present
+                doc.pop('_id', None)
+                timesheets_collection.insert_one(doc)
+                inserted += 1
+
+        return jsonify({
+            'success': True,
+            'inserted': inserted,
+            'skipped': skipped,
+            'message': f'Import complete. {inserted} timesheets inserted, {skipped} skipped (already existed or missing ID).'
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Import failed: {e}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

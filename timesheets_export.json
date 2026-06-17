@@ -1,0 +1,314 @@
+{
+  "Matthew": [
+    {
+      "id": 1770694944347,
+      "savedDate": "2026-02-10T03:42:24.347Z",
+      "consultant": "Ocean's Edge Consulting",
+      "client": "Panopticon Privacy Law",
+      "period": "Dec 1 - Feb 9",
+      "rate": 75,
+      "entries": [
+        {
+          "date": "2026-02-09",
+          "project": "Panopticon Privacy Law Introduction Work",
+          "description": "1. Set up simple crawler application for use to crawl pages for Privacy Violations\n2. Set up more comprehensive crawler for deeper crawls of pages for Privacy Violations.\n3. Set up Panopticon Privacy Law landing page\n4. Set up an application that analyzes .har files to review Privacy Violation crawler work.",
+          "hours": 15
+        }
+      ],
+      "totalHours": 15,
+      "totalAmount": 1125
+    },
+    {
+      "id": 1771480870430,
+      "savedDate": "2026-02-19T06:01:10.430Z",
+      "consultant": "Ocean's Edge Consulting",
+      "client": "Panopticon Privacy Law",
+      "period": "Feb 10 - Feb 20",
+      "rate": 75,
+      "entries": [
+        {
+          "date": "2026-02-18",
+          "project": "Panopticon Privacy Law Development Work",
+          "description": "Items worked on during this period:\n1. Deployed simple crawler tool to Render application\n2. Updated simple crawler tool locally to save and provide downloadable har file\n3. Deployed Har Analyzer Tool to Render application",
+          "hours": 3
+        }
+      ],
+      "totalHours": 3,
+      "totalAmount": 225
+    },
+    {
+      "id": 1771613260463,
+      "savedDate": "2026-02-20T18:47:40.463Z",
+      "consultant": "Ocean's Edge Consulting",
+      "client": "Alpha Encoded",
+      "period": "Feb 2 - 20",
+      "rate": 45,
+      "entries": [
+        {
+          "date": "2026-02-09",
+          "project": "Fidalgo Coffee Preliminary Setup",
+          "description": "- Set up new JIRA project board for Fidalgo Coffee\n- Set up Confluence pages for Fidalgo Coffee Project",
+          "hours": 5
+        },
+        {
+          "date": "2026-02-20",
+          "project": "Fidalgo Coffee Additional Setup",
+          "description": "- Added additional documents to JIRA project\n- Sync with AE regarding status, review work done, next steps",
+          "hours": 2
+        }
+      ],
+      "totalHours": 7,
+      "totalAmount": 315
+    },
+    {
+      "id": 1772698374676,
+      "savedDate": "2026-03-05T08:12:54.676Z",
+      "consultant": "Ocean's Edge Consulting",
+      "client": "Panopticon Privacy Law",
+      "period": "Feb 23 - Mar 6",
+      "rate": 75,
+      "entries": [
+        {
+          "date": "2026-03-05",
+          "project": "Panopticon Privacy Law Development Work",
+          "description": "Items worked on during this period:\n1. Updated render instance to be on starter tier ($7 a month)\n2. Updated application to read Shopify Pages\n3. Updated application to read privacy and terms pages\n4. Quality of life changes for timezone reading\n5. Better handling for memory issues",
+          "hours": 4
+        }
+      ],
+      "totalHours": 4,
+      "totalAmount": 300
+    },
+    {
+      "id": 1775078080894,
+      "savedDate": "2026-04-01T21:14:40.894Z",
+      "consultant": "Ocean's Edge Consulting",
+      "client": "Panopticon Privacy Law",
+      "period": "Mar 9 - Apr 1",
+      "rate": 75,
+      "entries": [
+        {
+          "date": "2026-03-09",
+          "project": "Simple Crawler",
+          "description": "Updated simple crawler for better page targeting",
+          "hours": 1
+        },
+        {
+          "date": "2026-03-10",
+          "project": "Simple Crawler",
+          "description": "Updated simple crawler to crawl an additional page to test memory load",
+          "hours": 1
+        },
+        {
+          "date": "2026-03-11",
+          "project": "Simple Crawler",
+          "description": "1, Updated simple crawler to reduce HAR file to only generate on main page of crawling\n2. Worked with founding partner on privacy manual crawling to find privacy violations",
+          "hours": 2
+        },
+        {
+          "date": "2026-03-18",
+          "project": "Simple Crawler",
+          "description": "1. Updated handling for memory saving by sequentially loading in pages and closing those already crawled\n2. Updated targeting priorities for links such as \"apply\" or \"apply now\"\n3. Updated tiebreaker scoring logic to handle situations where there's a shared score value.\n4. updated UI to explain new systems in detail to user.",
+          "hours": 1
+        },
+        {
+          "date": "2026-04-01",
+          "project": "Simple Crawler",
+          "description": "1. Prepared batch loading of URLs into crawler\n2. Added csv template file to UI\n3. Added jobs separation for preparing multiple urls per batch\n4. Added downloadable CSV file for each job.",
+          "hours": 3
+        }
+      ],
+      "totalHours": 8,
+      "totalAmount": 600
+    },
+    {
+      "id": 1777007120865,
+      "savedDate": "2026-04-25T05:54:18.734Z",
+      "consultant": "Ocean's Edge Consulting",
+      "client": "Panopticon Privacy Law",
+      "period": "Apr 1 - 31",
+      "rate": 75,
+      "entries": [
+        {
+          "date": "2026-04-22",
+          "project": "Case Status Project",
+          "description": "1. Set up case status project\n2. deployed case status project to render\n3. updated timesheet application and deployed to render",
+          "hours": 4
+        },
+        {
+          "date": "2026-04-23",
+          "project": "Case Status Project",
+          "description": "1. Update case status project based on feedback\n2. Updated render instance for case status project to keep json data\n",
+          "hours": 2
+        },
+        {
+          "date": "2026-04-24",
+          "project": "Timesheet Updates",
+          "description": "1. Made updates to Timesheet application\n2. Updated Render tier for timesheet application",
+          "hours": 1
+        }
+      ],
+      "totalHours": 7,
+      "totalAmount": 525
+    },
+    {
+      "id": 1780681050537,
+      "savedDate": "2026-06-15T17:28:29.862Z",
+      "consultant": "Ocean's Edge Consulting",
+      "client": "Panopticon Privacy Law",
+      "period": "Jun 1 - Jun 30",
+      "periodFrom": "2026-06-01",
+      "periodTo": "2026-06-30",
+      "rate": 120,
+      "entries": [
+        {
+          "date": "2026-06-01",
+          "type": "hours",
+          "project": "Har Analyzer Tool",
+          "description": "1. Improved memory optimization for analysis tool based on feedback",
+          "hours": 1.5,
+          "amount": 0
+        },
+        {
+          "date": "2026-06-05",
+          "type": "hours",
+          "project": "Har Analyzer Tool",
+          "description": "1. Added MongoDB connection to analyzer tool\n2. Added new \"History\" tab to analyzer tool for single and bulk analysis\n3. Added delete option for history rows\n4. History as 90 day window for each item that will delete when expired",
+          "hours": 2,
+          "amount": 0
+        },
+        {
+          "date": "2026-06-30",
+          "type": "expense",
+          "project": "Render",
+          "description": "Render Expense for projects that are deployed",
+          "hours": 0,
+          "amount": 25
+        },
+        {
+          "date": "2026-06-08",
+          "type": "hours",
+          "project": "Crawler Tool",
+          "description": "1. Updated Crawler to use MongoDB\n2. Added new History Tab for tracking crawls for single and batch jobs\n3. Added CSV download on history tab for single and batch jobs.",
+          "hours": 2.5,
+          "amount": 0
+        },
+        {
+          "date": "2026-06-10",
+          "type": "hours",
+          "project": "Crawler Tool, Case Studies Tracking Tool",
+          "description": "1. Crawler - Added logging page to tool for tracking jobs and memory usage on PROD\n2. Updated Case Studies tool locally to use DB connection, loaded PROD data into MongoDB \n3. Pushed MongoDB connection into PROD",
+          "hours": 2,
+          "amount": 0
+        },
+        {
+          "date": "2026-06-15",
+          "type": "hours",
+          "project": "HAR Analyzer Tool",
+          "description": "1. Locally Added template and source file uploading for application\n2. Generally debugging of application locally\n\nNOTE: Files not uploaded to PROD yet",
+          "hours": 1.5,
+          "amount": 0
+        }
+      ],
+      "totalHours": 9.5,
+      "totalAmount": 1165
+    }
+  ],
+  "Joan": [
+    {
+      "id": 1776792318104,
+      "savedDate": "2026-04-21T17:25:18.104Z",
+      "consultant": "Joan",
+      "client": "Sample Sheet",
+      "period": "April 1 - 31",
+      "rate": 150,
+      "entries": [
+        {
+          "date": "2026-04-21",
+          "project": "Sample",
+          "description": "Sample",
+          "hours": 1
+        }
+      ],
+      "totalHours": 1,
+      "totalAmount": 150
+    },
+    {
+      "id": 1781548693811,
+      "savedDate": "2026-06-15T18:38:13.811Z",
+      "consultant": "Joan",
+      "client": "Rimon",
+      "period": "Jun 1 - Jun 30",
+      "periodFrom": "2026-06-01",
+      "periodTo": "2026-06-30",
+      "rate": 600,
+      "entries": [
+        {
+          "date": "2026-06-01",
+          "type": "hours",
+          "project": "Watts",
+          "description": "Review SPA and comment",
+          "hours": 4,
+          "amount": 0
+        },
+        {
+          "date": "2026-06-04",
+          "type": "hours",
+          "project": "Watts",
+          "description": "call re disclosure schedule and SPA",
+          "hours": 0.5,
+          "amount": 0
+        },
+        {
+          "date": "2026-06-06",
+          "type": "hours",
+          "project": "Watts",
+          "description": "prep for IP disclosure schedule call with Precision",
+          "hours": 2.5,
+          "amount": 0
+        },
+        {
+          "date": "2026-06-08",
+          "type": "hours",
+          "project": "Watts",
+          "description": "call w/Precision re:  disclosure schedule IP",
+          "hours": 1,
+          "amount": 0
+        },
+        {
+          "date": "2026-06-09",
+          "type": "hours",
+          "project": "Watts",
+          "description": "IP definitions; Disclosure schedule edits; privacy notice and additions to the employee offer letter amendment",
+          "hours": 7,
+          "amount": 0
+        },
+        {
+          "date": "2026-06-10",
+          "type": "hours",
+          "project": "Watts",
+          "description": "Disclosure schedule edits",
+          "hours": 1,
+          "amount": 0
+        },
+        {
+          "date": "2026-06-11",
+          "type": "hours",
+          "project": "Watts",
+          "description": "PDK license Agreement edits",
+          "hours": 0.5,
+          "amount": 0
+        },
+        {
+          "date": "2026-06-15",
+          "type": "hours",
+          "project": "Watts",
+          "description": "SPA edits; review new SPA",
+          "hours": 2,
+          "amount": 0
+        }
+      ],
+      "totalHours": 18.5,
+      "totalAmount": 11100
+    }
+  ]
+}
