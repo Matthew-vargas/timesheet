@@ -66,6 +66,30 @@ USER_SELECTION_TEMPLATE = """
                     </div>
                 </button>
             </form>
+
+            <form action="/select-user" method="POST">
+                <input type="hidden" name="user" value="Sophia Cohen">
+                <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors shadow-md hover:shadow-lg transform hover:scale-105 duration-200">
+                    <div class="flex items-center justify-center gap-3">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                        </svg>
+                        <span class="text-xl">Sophia Cohen</span>
+                    </div>
+                </button>
+            </form>
+
+            <form action="/select-user" method="POST">
+                <input type="hidden" name="user" value="Lauren Bullitt">
+                <button type="submit" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors shadow-md hover:shadow-lg transform hover:scale-105 duration-200">
+                    <div class="flex items-center justify-center gap-3">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                        </svg>
+                        <span class="text-xl">Lauren Bullitt</span>
+                    </div>
+                </button>
+            </form>
         </div>
     </div>
 </body>
@@ -687,7 +711,7 @@ def index():
 @app.route('/select-user', methods=['POST'])
 def select_user():
     user = request.form.get('user')
-    if user in ['Matthew', 'Joan']:
+    if user in ['Matthew', 'Joan', 'Sophia Cohen', 'Lauren Bullitt']:
         session['user'] = user
         return redirect(url_for('timesheet'))
     return redirect(url_for('index'))
