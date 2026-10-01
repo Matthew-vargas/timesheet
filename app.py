@@ -429,8 +429,20 @@ TIMESHEET_TEMPLATE = """
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-6 mb-6">
-                <div>
+            <div class="grid grid-cols-4 gap-6 mb-6">
+                <div class="col-span-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Title <span class="text-gray-400 font-normal">(optional — used in exported filename)</span>
+                    </label>
+                    <input
+                        type="text"
+                        id="sheet-title"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="e.g. October Consulting"
+                    />
+                </div>
+
+                <div class="col-span-2">
                     <label class="block text-sm font-medium text-gray-700 mb-2">
                         Consultant Name
                     </label>
@@ -443,7 +455,7 @@ TIMESHEET_TEMPLATE = """
                     />
                 </div>
 
-                <div>
+                <div class="col-span-2">
                     <label class="block text-sm font-medium text-gray-700 mb-2">
                         Client Name
                     </label>
@@ -456,34 +468,26 @@ TIMESHEET_TEMPLATE = """
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Period
-                    </label>
-                    <div class="flex items-center gap-2">
-                        <div class="flex flex-col flex-1">
-                            <span class="text-xs text-gray-500 mb-1">From</span>
-                            <input
-                                type="date"
-                                id="period-from"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                onchange="updatePeriodString()"
-                            />
-                        </div>
-                        <span class="mt-4 text-gray-500">—</span>
-                        <div class="flex flex-col flex-1">
-                            <span class="text-xs text-gray-500 mb-1">To</span>
-                            <input
-                                type="date"
-                                id="period-to"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                onchange="updatePeriodString()"
-                            />
-                        </div>
-                    </div>
-                    <input type="hidden" id="period" />
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Period From</label>
+                    <input
+                        type="date"
+                        id="period-from"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onchange="updatePeriodString()"
+                    />
                 </div>
 
                 <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Period To</label>
+                    <input
+                        type="date"
+                        id="period-to"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onchange="updatePeriodString()"
+                    />
+                </div>
+
+                <div class="col-span-2">
                     <label class="block text-sm font-medium text-gray-700 mb-2">
                         Hourly Rate ($)
                     </label>
@@ -496,6 +500,8 @@ TIMESHEET_TEMPLATE = """
                         oninput="calculateTotals()"
                     />
                 </div>
+
+                <input type="hidden" id="period" />
             </div>
         </div>
 
@@ -736,6 +742,7 @@ TIMESHEET_TEMPLATE = """
         }
 
         function buildTimesheetPayload(overrideId) {
+            const title = document.getElementById('sheet-title').value.trim();
             const consultant = document.getElementById('consultant').value;
             const client = document.getElementById('client').value;
             const periodFrom = document.getElementById('period-from').value;
@@ -796,6 +803,7 @@ TIMESHEET_TEMPLATE = """
             return {
                 id: overrideId !== undefined ? overrideId : Date.now(),
                 savedDate: new Date().toISOString(),
+                title: title,
                 consultant: consultant,
                 client: client,
                 period: period,
@@ -874,6 +882,7 @@ TIMESHEET_TEMPLATE = """
                             '<div class="border border-gray-300 rounded-lg p-4 hover:bg-gray-50">' +
                                 '<div class="flex justify-between items-start mb-2">' +
                                     '<div>' +
+                                        (timesheet.title ? '<p class="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">' + timesheet.title + '</p>' : '') +
                                         '<h3 class="font-semibold text-lg text-gray-800">' + timesheet.client + '</h3>' +
                                         '<p class="text-sm text-gray-600">Consultant: ' + timesheet.consultant + '</p>' +
                                         '<p class="text-sm text-gray-600">Period: ' + timesheet.period + '</p>' +
@@ -912,6 +921,7 @@ TIMESHEET_TEMPLATE = """
                     return;
                 }
 
+                document.getElementById('sheet-title').value = timesheet.title || '';
                 document.getElementById('consultant').value = timesheet.consultant;
                 document.getElementById('client').value = timesheet.client;
                 document.getElementById('rate').value = timesheet.rate;
@@ -993,8 +1003,30 @@ TIMESHEET_TEMPLATE = """
         }
 
         function handlePrint() {
+            const title = document.getElementById('sheet-title').value.trim();
+            const client = document.getElementById('client').value.trim();
+            const periodFrom = document.getElementById('period-from').value;
+            const periodTo = document.getElementById('period-to').value;
+            const originalTitle = document.title;
+
+            // Build filename: title_client_periodFrom_periodTo or client_periodFrom_periodTo
+            let filename = '';
+            if (title) {
+                filename = title;
+            } else {
+                const parts = [];
+                if (client) parts.push(client);
+                if (periodFrom) parts.push(periodFrom);
+                if (periodTo && periodTo !== periodFrom) parts.push(periodTo);
+                filename = parts.join('_');
+            }
+            if (filename) {
+                document.title = filename.replace(/[^a-zA-Z0-9_.\\-]/g, '_');
+            }
+
             setTimeout(function() {
                 window.print();
+                document.title = originalTitle;
             }, 100);
         }
 
@@ -1040,38 +1072,39 @@ EXPENSE_TEMPLATE = """
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-6 mb-6">
-                <div>
+            <div class="grid grid-cols-4 gap-6 mb-6">
+                <div class="col-span-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Title <span class="text-gray-400 font-normal">(optional — used in exported filename)</span></label>
+                    <input type="text" id="sheet-title"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="e.g. October Expenses" />
+                </div>
+                <div class="col-span-2">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Submitted By</label>
                     <input type="text" id="submitted-by"
                         class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         value="{{ current_user }}" />
                 </div>
-                <div>
+                <div class="col-span-2">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Client</label>
                     <input type="text" id="client"
                         class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         placeholder="Client name" />
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Period</label>
-                    <div class="flex items-center gap-2">
-                        <div class="flex flex-col flex-1">
-                            <span class="text-xs text-gray-500 mb-1">From</span>
-                            <input type="date" id="period-from"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                onchange="updatePeriodString()" />
-                        </div>
-                        <span class="mt-4 text-gray-500">—</span>
-                        <div class="flex flex-col flex-1">
-                            <span class="text-xs text-gray-500 mb-1">To</span>
-                            <input type="date" id="period-to"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                onchange="updatePeriodString()" />
-                        </div>
-                    </div>
-                    <input type="hidden" id="period" />
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Period From</label>
+                    <input type="date" id="period-from"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        onchange="updatePeriodString()" />
                 </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Period To</label>
+                    <input type="date" id="period-to"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        onchange="updatePeriodString()" />
+                </div>
+                <div class="col-span-2"></div>
+                <input type="hidden" id="period" />
             </div>
         </div>
 
@@ -1238,6 +1271,7 @@ EXPENSE_TEMPLATE = """
         }
 
         function buildReportPayload(overrideId) {
+            const title = document.getElementById('sheet-title').value.trim();
             const submittedBy = document.getElementById('submitted-by').value;
             const client = document.getElementById('client').value;
             const periodFrom = document.getElementById('period-from').value;
@@ -1274,6 +1308,7 @@ EXPENSE_TEMPLATE = """
             return {
                 id: overrideId !== undefined ? overrideId : Date.now(),
                 savedDate: new Date().toISOString(),
+                title,
                 submittedBy,
                 client,
                 period,
@@ -1343,6 +1378,7 @@ EXPENSE_TEMPLATE = """
                             '<div class="border border-gray-300 rounded-lg p-4 hover:bg-gray-50">' +
                                 '<div class="flex justify-between items-start mb-2">' +
                                     '<div>' +
+                                        (r.title ? '<p class="text-xs font-semibold text-emerald-600 uppercase tracking-wide mb-1">' + r.title + '</p>' : '') +
                                         '<h3 class="font-semibold text-lg text-gray-800">' + r.client + '</h3>' +
                                         '<p class="text-sm text-gray-600">Period: ' + r.period + '</p>' +
                                         '<p class="text-xs text-gray-500 mt-1">Saved: ' + savedDate + '</p>' +
@@ -1374,6 +1410,7 @@ EXPENSE_TEMPLATE = """
                 const r = reports.find(function(x) { return x.id === id; });
                 if (!r) { alert('Could not find that report.'); return; }
 
+                document.getElementById('sheet-title').value = r.title || '';
                 document.getElementById('submitted-by').value = r.submittedBy;
                 document.getElementById('client').value = r.client;
                 if (r.periodFrom && r.periodTo) {
@@ -1430,7 +1467,25 @@ EXPENSE_TEMPLATE = """
         }
 
         function handlePrint() {
-            setTimeout(function() { window.print(); }, 100);
+            const title = document.getElementById('sheet-title').value.trim();
+            const client = document.getElementById('client').value.trim();
+            const periodFrom = document.getElementById('period-from').value;
+            const periodTo = document.getElementById('period-to').value;
+            const originalTitle = document.title;
+
+            const parts = [];
+            if (title) parts.push(title);
+            if (client) parts.push(client);
+            if (periodFrom) parts.push(periodFrom);
+            if (periodTo && periodTo !== periodFrom) parts.push(periodTo);
+            if (parts.length > 0) {
+                document.title = parts.join('_').replace(/[^a-zA-Z0-9_.\\-]/g, '_');
+            }
+
+            setTimeout(function() {
+                window.print();
+                document.title = originalTitle;
+            }, 100);
         }
 
         addEntry();
