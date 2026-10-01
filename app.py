@@ -24,11 +24,13 @@ def connect_db():
         client.server_info()
         db = client['OceansEdge']
         print('Connected to MongoDB: OceansEdge')
-        return db['timesheets'], db['users']
+        return db['timesheets'], db['users'], db['expenses']
     except pymongo.errors.ServerSelectionTimeoutError as e:
         raise RuntimeError(f'Could not connect to MongoDB: {e}')
 
-timesheets_collection, users_collection = connect_db()
+timesheets_collection, users_collection, expenses_collection = connect_db()
+
+EXPENSE_CATEGORIES = ['Rent', 'Hosting', 'Software & Subscriptions', 'Other']
 
 
 # --- PIN templates ---
@@ -418,6 +420,9 @@ TIMESHEET_TEMPLATE = """
                         </svg>
                         {{ current_user }}
                     </div>
+                    <a href="/expenses" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium">
+                        Expenses
+                    </a>
                     <a href="/switch-user" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors text-sm">
                         Switch User
                     </a>
@@ -999,6 +1004,441 @@ TIMESHEET_TEMPLATE = """
 </html>
 """
 
+EXPENSE_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Report - {{ current_user }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="max-w-5xl mx-auto p-8 bg-white" id="expense-report">
+        <div class="mb-8">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-3xl font-bold text-gray-800">Expense Report</h1>
+                <div class="flex items-center gap-4 no-print">
+                    <div class="bg-emerald-100 text-emerald-800 px-4 py-2 rounded-lg font-semibold">
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                        </svg>
+                        {{ current_user }}
+                    </div>
+                    <a href="/timesheet" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium">
+                        Timesheets
+                    </a>
+                    <a href="/switch-user" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors text-sm">
+                        Switch User
+                    </a>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-6 mb-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Submitted By</label>
+                    <input type="text" id="submitted-by"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        value="{{ current_user }}" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Client</label>
+                    <input type="text" id="client"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="Client name" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Period</label>
+                    <div class="flex items-center gap-2">
+                        <div class="flex flex-col flex-1">
+                            <span class="text-xs text-gray-500 mb-1">From</span>
+                            <input type="date" id="period-from"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                onchange="updatePeriodString()" />
+                        </div>
+                        <span class="mt-4 text-gray-500">—</span>
+                        <div class="flex flex-col flex-1">
+                            <span class="text-xs text-gray-500 mb-1">To</span>
+                            <input type="date" id="period-to"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                onchange="updatePeriodString()" />
+                        </div>
+                    </div>
+                    <input type="hidden" id="period" />
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-6">
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse">
+                    <thead>
+                        <tr class="bg-gray-100">
+                            <th class="border border-gray-300 px-4 py-3 text-left text-sm font-semibold text-gray-700">Date</th>
+                            <th class="border border-gray-300 px-4 py-3 text-left text-sm font-semibold text-gray-700">Category</th>
+                            <th class="border border-gray-300 px-4 py-3 text-left text-sm font-semibold text-gray-700">Description</th>
+                            <th class="border border-gray-300 px-4 py-3 text-left text-sm font-semibold text-gray-700">Amount</th>
+                            <th class="border border-gray-300 px-4 py-3 text-center text-sm font-semibold text-gray-700 no-print">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="entries-tbody"></tbody>
+                </table>
+            </div>
+            <button onclick="addEntry()"
+                class="mt-4 flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors no-print">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                Add Row
+            </button>
+        </div>
+
+        <div class="border-t-2 border-gray-300 pt-4">
+            <div class="flex justify-end">
+                <div class="w-64">
+                    <div class="flex justify-between items-center pt-2">
+                        <span class="text-lg font-semibold text-gray-700">Total:</span>
+                        <span class="text-2xl font-bold text-emerald-700" id="total-amount">$0.00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="editing-banner" class="hidden mt-4 mb-2 px-4 py-2 bg-yellow-50 border border-yellow-300 rounded-md text-yellow-800 text-sm font-medium no-print">
+            ✏️ Editing existing report — <strong>Save Report</strong> will overwrite it, or use <strong>Save as New</strong> to create a copy.
+        </div>
+
+        <div class="mt-8 flex gap-4 no-print flex-wrap">
+            <button onclick="saveReport()"
+                class="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors font-medium">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
+                </svg>
+                Save Report
+            </button>
+            <button id="save-as-new-btn" onclick="saveAsNew()"
+                class="hidden flex items-center gap-2 px-6 py-3 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors font-medium">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path>
+                </svg>
+                Save as New
+            </button>
+            <button onclick="handlePrint()"
+                class="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                </svg>
+                Print / Save as PDF
+            </button>
+            <button onclick="showSavedReports()"
+                class="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors font-medium">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                View Saved Reports
+            </button>
+        </div>
+
+        <div class="mt-8 pt-6 border-t border-gray-300">
+            <p class="text-sm text-gray-600 mb-4">Submitted By: ___________________________ Date: ___________</p>
+            <p class="text-sm text-gray-600">Client Approval: ___________________________ Date: ___________</p>
+        </div>
+    </div>
+
+    <!-- Saved reports modal -->
+    <div id="modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 no-print" onclick="closeModal(event)">
+        <div class="bg-white rounded-lg p-6 max-w-3xl w-full mx-4 max-h-[80vh] overflow-y-auto" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-800">Saved Expense Reports</h2>
+                <button onclick="closeModal()" class="text-gray-600 hover:text-gray-800">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div id="saved-reports-list"></div>
+        </div>
+    </div>
+
+    <script>
+        const CATEGORIES = {{ categories|tojson }};
+        let entryId = 0;
+        let currentReportId = null;
+
+        function addEntry(preCategory) {
+            entryId++;
+            const tbody = document.getElementById('entries-tbody');
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-gray-50';
+            row.id = 'entry-' + entryId;
+
+            let catOptions = CATEGORIES.map(function(c) {
+                const sel = (preCategory && preCategory === c) ? ' selected' : '';
+                return '<option value="' + c + '"' + sel + '>' + c + '</option>';
+            }).join('');
+
+            row.innerHTML =
+                '<td class="border border-gray-300 px-2 py-2">' +
+                    '<input type="date" class="entry-date w-full px-2 py-1 border-0 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded" />' +
+                '</td>' +
+                '<td class="border border-gray-300 px-2 py-2">' +
+                    '<select class="entry-category w-full px-2 py-1 border border-gray-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded bg-white text-sm">' +
+                        catOptions +
+                    '</select>' +
+                '</td>' +
+                '<td class="border border-gray-300 px-2 py-2">' +
+                    '<textarea class="entry-description w-full px-2 py-1 border-0 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded resize-y min-h-[2.5rem]" placeholder="Description" rows="2"></textarea>' +
+                '</td>' +
+                '<td class="border border-gray-300 px-2 py-2">' +
+                    '<div class="relative">' +
+                        '<span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>' +
+                        '<input type="number" class="entry-amount w-full pl-5 px-2 py-1 border-0 focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded" placeholder="0.00" step="0.01" min="0" oninput="calculateTotal()" />' +
+                    '</div>' +
+                '</td>' +
+                '<td class="border border-gray-300 px-2 py-2 text-center no-print">' +
+                    '<button onclick="removeEntry(' + entryId + ')" class="text-red-600 hover:text-red-800 p-1">' +
+                        '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+                            '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>' +
+                        '</svg>' +
+                    '</button>' +
+                '</td>';
+            tbody.appendChild(row);
+        }
+
+        function removeEntry(id) {
+            const row = document.getElementById('entry-' + id);
+            if (row) { row.remove(); calculateTotal(); }
+        }
+
+        function calculateTotal() {
+            let total = 0;
+            document.querySelectorAll('.entry-amount').forEach(function(input) {
+                total += parseFloat(input.value) || 0;
+            });
+            document.getElementById('total-amount').textContent = '$' + total.toFixed(2);
+        }
+
+        function updatePeriodString() {
+            const fromVal = document.getElementById('period-from').value;
+            const toVal = document.getElementById('period-to').value;
+            let periodStr = '';
+            if (fromVal && toVal) {
+                const fromDate = new Date(fromVal + 'T00:00:00');
+                const toDate = new Date(toVal + 'T00:00:00');
+                const fmt = { month: 'short', day: 'numeric' };
+                periodStr = fromDate.toLocaleDateString('en-US', fmt) + ' - ' + toDate.toLocaleDateString('en-US', fmt);
+            }
+            document.getElementById('period').value = periodStr;
+        }
+
+        function buildReportPayload(overrideId) {
+            const submittedBy = document.getElementById('submitted-by').value;
+            const client = document.getElementById('client').value;
+            const periodFrom = document.getElementById('period-from').value;
+            const periodTo = document.getElementById('period-to').value;
+
+            if (!submittedBy || !client || !periodFrom || !periodTo) {
+                alert('Please fill in Submitted By, Client, and both Period dates before saving.');
+                return null;
+            }
+
+            const fromDate = new Date(periodFrom + 'T00:00:00');
+            const toDate = new Date(periodTo + 'T00:00:00');
+            const fmt = { month: 'short', day: 'numeric' };
+            const period = fromDate.toLocaleDateString('en-US', fmt) + ' - ' + toDate.toLocaleDateString('en-US', fmt);
+
+            const entries = [];
+            document.querySelectorAll('#entries-tbody tr').forEach(function(row) {
+                const date = row.querySelector('.entry-date').value;
+                const category = row.querySelector('.entry-category').value;
+                const description = row.querySelector('.entry-description').value;
+                const amount = parseFloat(row.querySelector('.entry-amount').value) || 0;
+                if (date || description || amount) {
+                    entries.push({ date, category, description, amount });
+                }
+            });
+
+            if (entries.length === 0) {
+                alert('Please add at least one expense entry before saving.');
+                return null;
+            }
+
+            const totalAmount = entries.reduce(function(s, e) { return s + e.amount; }, 0);
+
+            return {
+                id: overrideId !== undefined ? overrideId : Date.now(),
+                savedDate: new Date().toISOString(),
+                submittedBy,
+                client,
+                period,
+                periodFrom,
+                periodTo,
+                entries,
+                totalAmount
+            };
+        }
+
+        async function saveReport() {
+            const isUpdate = currentReportId !== null;
+            const report = buildReportPayload(isUpdate ? currentReportId : undefined);
+            if (!report) return;
+
+            const url = isUpdate ? '/api/expenses/' + currentReportId : '/api/expenses';
+            const method = isUpdate ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(report)
+                });
+                if (response.ok) {
+                    currentReportId = report.id;
+                    alert(isUpdate ? 'Report updated successfully!' : 'Report saved successfully!');
+                    updateEditingBanner();
+                } else {
+                    alert('Error saving report');
+                }
+            } catch (e) { alert('Error saving report: ' + e.message); }
+        }
+
+        async function saveAsNew() {
+            const report = buildReportPayload();
+            if (!report) return;
+            try {
+                const response = await fetch('/api/expenses', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(report)
+                });
+                if (response.ok) {
+                    currentReportId = report.id;
+                    alert('Saved as a new report!');
+                    updateEditingBanner();
+                } else {
+                    alert('Error saving report');
+                }
+            } catch (e) { alert('Error saving report: ' + e.message); }
+        }
+
+        async function showSavedReports() {
+            try {
+                const response = await fetch('/api/expenses');
+                const reports = await response.json();
+                const listDiv = document.getElementById('saved-reports-list');
+
+                if (reports.length === 0) {
+                    listDiv.innerHTML = '<p class="text-gray-600 text-center py-8">No saved expense reports yet.</p>';
+                } else {
+                    let html = '<div class="space-y-4">';
+                    reports.forEach(function(r) {
+                        const savedDate = new Date(r.savedDate).toLocaleString();
+                        html +=
+                            '<div class="border border-gray-300 rounded-lg p-4 hover:bg-gray-50">' +
+                                '<div class="flex justify-between items-start mb-2">' +
+                                    '<div>' +
+                                        '<h3 class="font-semibold text-lg text-gray-800">' + r.client + '</h3>' +
+                                        '<p class="text-sm text-gray-600">Period: ' + r.period + '</p>' +
+                                        '<p class="text-xs text-gray-500 mt-1">Saved: ' + savedDate + '</p>' +
+                                    '</div>' +
+                                    '<div class="text-right">' +
+                                        '<p class="text-lg font-bold text-emerald-700">$' + r.totalAmount.toFixed(2) + '</p>' +
+                                        '<p class="text-sm text-gray-500">' + r.entries.length + ' item' + (r.entries.length !== 1 ? 's' : '') + '</p>' +
+                                    '</div>' +
+                                '</div>' +
+                                '<div class="flex gap-2 mt-3">' +
+                                    '<button onclick="loadReport(' + r.id + ')" class="px-3 py-1 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700">Load</button>' +
+                                    '<button onclick="deleteReport(' + r.id + ')" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">Delete</button>' +
+                                '</div>' +
+                            '</div>';
+                    });
+                    html += '</div>';
+                    listDiv.innerHTML = html;
+                }
+
+                document.getElementById('modal').classList.remove('hidden');
+                document.getElementById('modal').classList.add('flex');
+            } catch (e) { alert('Error loading reports: ' + e.message); }
+        }
+
+        async function loadReport(id) {
+            try {
+                const response = await fetch('/api/expenses');
+                const reports = await response.json();
+                const r = reports.find(function(x) { return x.id === id; });
+                if (!r) { alert('Could not find that report.'); return; }
+
+                document.getElementById('submitted-by').value = r.submittedBy;
+                document.getElementById('client').value = r.client;
+                if (r.periodFrom && r.periodTo) {
+                    document.getElementById('period-from').value = r.periodFrom;
+                    document.getElementById('period-to').value = r.periodTo;
+                }
+                updatePeriodString();
+
+                document.getElementById('entries-tbody').innerHTML = '';
+                entryId = 0;
+
+                r.entries.forEach(function(entry) {
+                    addEntry(entry.category);
+                    const row = document.getElementById('entry-' + entryId);
+                    row.querySelector('.entry-date').value = entry.date;
+                    row.querySelector('.entry-description').value = entry.description;
+                    row.querySelector('.entry-amount').value = entry.amount;
+                });
+
+                currentReportId = r.id;
+                calculateTotal();
+                updateEditingBanner();
+                closeModal();
+            } catch (e) { alert('Error loading report: ' + e.message); }
+        }
+
+        async function deleteReport(id) {
+            if (confirm('Are you sure you want to delete this expense report?')) {
+                try {
+                    const response = await fetch('/api/expenses/' + id, { method: 'DELETE' });
+                    if (response.ok) { showSavedReports(); }
+                    else { alert('Error deleting report'); }
+                } catch (e) { alert('Error deleting report: ' + e.message); }
+            }
+        }
+
+        function closeModal(event) {
+            if (!event || event.target.id === 'modal') {
+                document.getElementById('modal').classList.add('hidden');
+                document.getElementById('modal').classList.remove('flex');
+            }
+        }
+
+        function updateEditingBanner() {
+            const banner = document.getElementById('editing-banner');
+            const saveAsNewBtn = document.getElementById('save-as-new-btn');
+            if (currentReportId !== null) {
+                banner.classList.remove('hidden');
+                saveAsNewBtn.classList.remove('hidden');
+            } else {
+                banner.classList.add('hidden');
+                saveAsNewBtn.classList.add('hidden');
+            }
+        }
+
+        function handlePrint() {
+            setTimeout(function() { window.print(); }, 100);
+        }
+
+        addEntry();
+    </script>
+</body>
+</html>
+"""
+
 # --- Helper: PIN utilities ---
 
 def _get_user_doc(username):
@@ -1296,6 +1736,52 @@ def rename_user():
         'modified': result.modified_count,
         'message': f'Renamed {result.modified_count} timesheet(s) from "Matthew" to "Matthew Vargas".'
     })
+
+
+@app.route('/expenses')
+def expenses():
+    if 'user' not in session:
+        return redirect(url_for('index'))
+    return render_template_string(EXPENSE_TEMPLATE, current_user=session['user'], categories=EXPENSE_CATEGORIES)
+
+@app.route('/api/expenses', methods=['GET'])
+def get_expenses():
+    if 'user' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    docs = list(expenses_collection.find({'user': session['user']}, {'_id': 0}))
+    return jsonify(docs)
+
+@app.route('/api/expenses', methods=['POST'])
+def save_expense_route():
+    if 'user' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    report = request.json
+    report['user'] = session['user']
+    report.pop('_id', None)
+    expenses_collection.insert_one(report)
+    return jsonify({'success': True})
+
+@app.route('/api/expenses/<int:report_id>', methods=['PUT'])
+def update_expense(report_id):
+    if 'user' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    report = request.json
+    report['user'] = session['user']
+    report.pop('_id', None)
+    result = expenses_collection.replace_one(
+        {'id': report_id, 'user': session['user']},
+        report
+    )
+    if result.matched_count == 0:
+        return jsonify({'error': 'Report not found'}), 404
+    return jsonify({'success': True})
+
+@app.route('/api/expenses/<int:report_id>', methods=['DELETE'])
+def delete_expense(report_id):
+    if 'user' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    expenses_collection.delete_one({'id': report_id, 'user': session['user']})
+    return jsonify({'success': True})
 
 
 if __name__ == '__main__':
