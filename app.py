@@ -2,15 +2,19 @@ from flask import Flask, render_template_string, jsonify, request, session, redi
 import os
 from dotenv import load_dotenv
 import pymongo
+import bcrypt
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
+# Users that require PIN authentication
+PIN_PROTECTED_USERS = ['Matthew Vargas']
+
 # --- MongoDB connection ---
 def connect_db():
-    """Connect to MongoDB Atlas and return the timesheets collection."""
+    """Connect to MongoDB Atlas and return (timesheets_collection, users_collection)."""
     mongo_uri = os.environ.get('MONGO_URI')
     if not mongo_uri:
         raise RuntimeError('MONGO_URI is not set. Add it to your .env file or Render environment variables.')
@@ -20,13 +24,292 @@ def connect_db():
         client.server_info()
         db = client['OceansEdge']
         print('Connected to MongoDB: OceansEdge')
-        return db['timesheets']
+        return db['timesheets'], db['users']
     except pymongo.errors.ServerSelectionTimeoutError as e:
         raise RuntimeError(f'Could not connect to MongoDB: {e}')
 
-timesheets_collection = connect_db()
+timesheets_collection, users_collection = connect_db()
 
 
+# --- PIN templates ---
+
+PIN_SET_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Set Your PIN - Timesheet</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen flex items-center justify-center">
+    <div class="bg-white rounded-lg shadow-xl p-10 max-w-sm w-full">
+        <div class="text-center mb-6">
+            <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-bold text-gray-800">Set Your PIN</h1>
+            <p class="text-gray-500 mt-2 text-sm">Hi {{ username }}, create a 4-digit PIN to secure your account. Once set, this PIN is yours — keep it safe.</p>
+        </div>
+
+        {% if error %}
+        <div class="mb-4 px-4 py-2 bg-red-50 border border-red-300 rounded-md text-red-700 text-sm text-center">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form action="/pin/{{ username }}/set" method="POST" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">New PIN</label>
+                <div class="relative">
+                    <input
+                        type="password"
+                        id="pin"
+                        name="pin"
+                        maxlength="4"
+                        inputmode="numeric"
+                        autocomplete="new-password"
+                        required
+                        class="w-full px-4 py-3 pr-12 text-center text-2xl tracking-widest border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="••••"
+                    />
+                    <button type="button" onclick="togglePin('pin', 'eye-pin')" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        <svg id="eye-pin" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Confirm PIN</label>
+                <div class="relative">
+                    <input
+                        type="password"
+                        id="pin_confirm"
+                        name="pin_confirm"
+                        maxlength="4"
+                        inputmode="numeric"
+                        autocomplete="new-password"
+                        required
+                        class="w-full px-4 py-3 pr-12 text-center text-2xl tracking-widest border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="••••"
+                    />
+                    <button type="button" onclick="togglePin('pin_confirm', 'eye-confirm')" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        <svg id="eye-confirm" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <button
+                type="submit"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-md transition-colors"
+            >
+                Set PIN
+            </button>
+        </form>
+        <div class="mt-4 text-center">
+            <a href="/" class="text-sm text-gray-400 hover:text-gray-600">← Back to user selection</a>
+        </div>
+    </div>
+    <script>
+        function togglePin(inputId, eyeId) {
+            const input = document.getElementById(inputId);
+            const eye = document.getElementById(eyeId);
+            const isHidden = input.type === 'password';
+            input.type = isHidden ? 'text' : 'password';
+            eye.innerHTML = isHidden
+                ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path>'
+                : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
+        }
+    </script>
+</body>
+</html>
+"""
+
+PIN_ENTRY_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enter PIN - Timesheet</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen flex items-center justify-center">
+    <div class="bg-white rounded-lg shadow-xl p-10 max-w-sm w-full">
+        <div class="text-center mb-6">
+            <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-bold text-gray-800">Enter Your PIN</h1>
+            <p class="text-gray-500 mt-1 text-sm">Welcome back, {{ username }}</p>
+        </div>
+
+        {% if error %}
+        <div class="mb-4 px-4 py-2 bg-red-50 border border-red-300 rounded-md text-red-700 text-sm text-center">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form action="/pin/{{ username }}/verify" method="POST" class="space-y-4">
+            <div class="relative">
+                <input
+                    type="password"
+                    id="pin"
+                    name="pin"
+                    maxlength="4"
+                    inputmode="numeric"
+                    autocomplete="current-password"
+                    autofocus
+                    required
+                    class="w-full px-4 py-3 pr-12 text-center text-2xl tracking-widest border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="••••"
+                />
+                <button type="button" onclick="togglePin('pin', 'eye-pin')" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    <svg id="eye-pin" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                    </svg>
+                </button>
+            </div>
+            <button
+                type="submit"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-md transition-colors"
+            >
+                Enter
+            </button>
+        </form>
+        <div class="mt-4 text-center space-y-2">
+            <a href="/pin/{{ username }}/reset" class="block text-sm text-blue-500 hover:text-blue-700">Forgot PIN?</a>
+            <a href="/" class="block text-sm text-gray-400 hover:text-gray-600">← Back to user selection</a>
+        </div>
+    </div>
+    <script>
+        function togglePin(inputId, eyeId) {
+            const input = document.getElementById(inputId);
+            const eye = document.getElementById(eyeId);
+            const isHidden = input.type === 'password';
+            input.type = isHidden ? 'text' : 'password';
+            eye.innerHTML = isHidden
+                ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path>'
+                : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
+        }
+    </script>
+</body>
+</html>
+"""
+
+PIN_RESET_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset PIN - Timesheet</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen flex items-center justify-center">
+    <div class="bg-white rounded-lg shadow-xl p-10 max-w-sm w-full">
+        <div class="text-center mb-6">
+            <div class="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-bold text-gray-800">Reset PIN</h1>
+            <p class="text-gray-500 mt-2 text-sm">Set a new 4-digit PIN for {{ username }}.</p>
+        </div>
+
+        {% if error %}
+        <div class="mb-4 px-4 py-2 bg-red-50 border border-red-300 rounded-md text-red-700 text-sm text-center">
+            {{ error }}
+            {% if show_login_link %}
+            <div class="mt-2">
+                <a href="/pin/{{ username }}/verify" class="text-blue-600 hover:text-blue-800 font-medium underline">Log in with my existing PIN instead</a>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <form action="/pin/{{ username }}/reset" method="POST" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">New PIN</label>
+                <div class="relative">
+                    <input
+                        type="password"
+                        id="pin"
+                        name="pin"
+                        maxlength="4"
+                        inputmode="numeric"
+                        autocomplete="new-password"
+                        autofocus
+                        required
+                        class="w-full px-4 py-3 pr-12 text-center text-2xl tracking-widest border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="••••"
+                    />
+                    <button type="button" onclick="togglePin('pin', 'eye-pin')" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        <svg id="eye-pin" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Confirm PIN</label>
+                <div class="relative">
+                    <input
+                        type="password"
+                        id="pin_confirm"
+                        name="pin_confirm"
+                        maxlength="4"
+                        inputmode="numeric"
+                        autocomplete="new-password"
+                        required
+                        class="w-full px-4 py-3 pr-12 text-center text-2xl tracking-widest border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="••••"
+                    />
+                    <button type="button" onclick="togglePin('pin_confirm', 'eye-confirm')" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        <svg id="eye-confirm" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <button
+                type="submit"
+                class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-3 rounded-md transition-colors"
+            >
+                Reset PIN
+            </button>
+        </form>
+        <div class="mt-4 text-center space-y-2">
+            <a href="/pin/{{ username }}/verify" class="block text-sm text-blue-500 hover:text-blue-700">I remember my PIN — log in instead</a>
+            <a href="/" class="block text-sm text-gray-400 hover:text-gray-600">← Back to user selection</a>
+        </div>
+    </div>
+    <script>
+        function togglePin(inputId, eyeId) {
+            const input = document.getElementById(inputId);
+            const eye = document.getElementById(eyeId);
+            const isHidden = input.type === 'password';
+            input.type = isHidden ? 'text' : 'password';
+            eye.innerHTML = isHidden
+                ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path>'
+                : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
+        }
+    </script>
+</body>
+</html>
+"""
 
 USER_SELECTION_TEMPLATE = """
 <!DOCTYPE html>
@@ -41,20 +324,20 @@ USER_SELECTION_TEMPLATE = """
     <div class="bg-white rounded-lg shadow-xl p-12 max-w-md w-full">
         <h1 class="text-4xl font-bold text-gray-800 mb-2 text-center">Timesheet App</h1>
         <p class="text-gray-600 text-center mb-8">Select your user profile</p>
-        
+
         <div class="space-y-4">
             <form action="/select-user" method="POST">
-                <input type="hidden" name="user" value="Matthew">
+                <input type="hidden" name="user" value="Matthew Vargas">
                 <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors shadow-md hover:shadow-lg transform hover:scale-105 duration-200">
                     <div class="flex items-center justify-center gap-3">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                         </svg>
-                        <span class="text-xl">Matthew</span>
+                        <span class="text-xl">Matthew Vargas</span>
                     </div>
                 </button>
             </form>
-            
+
             <form action="/select-user" method="POST">
                 <input type="hidden" name="user" value="Joan">
                 <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-4 px-6 rounded-lg transition-colors shadow-md hover:shadow-lg transform hover:scale-105 duration-200">
@@ -140,7 +423,7 @@ TIMESHEET_TEMPLATE = """
                     </a>
                 </div>
             </div>
-            
+
             <div class="grid grid-cols-2 gap-6 mb-6">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">
@@ -154,7 +437,7 @@ TIMESHEET_TEMPLATE = """
                         value="{{ current_user }}"
                     />
                 </div>
-                
+
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">
                         Client Name
@@ -166,7 +449,7 @@ TIMESHEET_TEMPLATE = """
                         placeholder="Client name"
                     />
                 </div>
-                
+
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">
                         Period
@@ -194,7 +477,7 @@ TIMESHEET_TEMPLATE = """
                     </div>
                     <input type="hidden" id="period" />
                 </div>
-                
+
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">
                         Hourly Rate ($)
@@ -240,7 +523,7 @@ TIMESHEET_TEMPLATE = """
                     </tbody>
                 </table>
             </div>
-            
+
             <button
                 onclick="addEntry()"
                 class="mt-4 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors no-print"
@@ -292,7 +575,7 @@ TIMESHEET_TEMPLATE = """
                 </svg>
                 Save as New
             </button>
-            
+
             <button
                 onclick="handlePrint()"
                 class="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
@@ -302,7 +585,7 @@ TIMESHEET_TEMPLATE = """
                 </svg>
                 Print / Save as PDF
             </button>
-            
+
             <button
                 onclick="showSavedTimesheets()"
                 class="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors font-medium"
@@ -346,7 +629,7 @@ TIMESHEET_TEMPLATE = """
             row.id = 'entry-' + entryId;
             const currentType = type || 'hours';
             const isExpense = currentType === 'expense';
-            row.innerHTML = 
+            row.innerHTML =
                 '<td class="border border-gray-300 px-2 py-2">' +
                     '<input type="date" class="entry-date w-full px-2 py-1 border-0 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded" />' +
                 '</td>' +
@@ -575,14 +858,14 @@ TIMESHEET_TEMPLATE = """
                 const response = await fetch('/api/timesheets');
                 const db = await response.json();
                 const listDiv = document.getElementById('saved-timesheets-list');
-                
+
                 if (db.length === 0) {
                     listDiv.innerHTML = '<p class="text-gray-600 text-center py-8">No saved timesheets yet.</p>';
                 } else {
                     let html = '<div class="space-y-4">';
                     db.forEach(function(timesheet, index) {
                         const savedDate = new Date(timesheet.savedDate).toLocaleString();
-                        html += 
+                        html +=
                             '<div class="border border-gray-300 rounded-lg p-4 hover:bg-gray-50">' +
                                 '<div class="flex justify-between items-start mb-2">' +
                                     '<div>' +
@@ -605,7 +888,7 @@ TIMESHEET_TEMPLATE = """
                     html += '</div>';
                     listDiv.innerHTML = html;
                 }
-                
+
                 document.getElementById('modal').classList.remove('hidden');
                 document.getElementById('modal').classList.add('flex');
             } catch (error) {
@@ -623,7 +906,7 @@ TIMESHEET_TEMPLATE = """
                     alert('Could not find that timesheet.');
                     return;
                 }
-                
+
                 document.getElementById('consultant').value = timesheet.consultant;
                 document.getElementById('client').value = timesheet.client;
                 document.getElementById('rate').value = timesheet.rate;
@@ -641,7 +924,7 @@ TIMESHEET_TEMPLATE = """
 
                 document.getElementById('entries-tbody').innerHTML = '';
                 entryId = 0;
-                
+
                 timesheet.entries.forEach(function(entry) {
                     const entryType = entry.type || 'hours';
                     addEntry(entryType);
@@ -657,7 +940,7 @@ TIMESHEET_TEMPLATE = """
                         if (hoursInput) hoursInput.value = entry.hours || 0;
                     }
                 });
-                
+
                 currentTimesheetId = timesheet.id;
                 calculateTotals();
                 updateEditingBanner();
@@ -673,7 +956,7 @@ TIMESHEET_TEMPLATE = """
                     const response = await fetch('/api/timesheets/' + id, {
                         method: 'DELETE'
                     });
-                    
+
                     if (response.ok) {
                         showSavedTimesheets();
                     } else {
@@ -716,6 +999,27 @@ TIMESHEET_TEMPLATE = """
 </html>
 """
 
+# --- Helper: PIN utilities ---
+
+def _get_user_doc(username):
+    """Return the user document from the users collection, or None."""
+    return users_collection.find_one({'username': username}, {'_id': 0})
+
+def _hash_pin(pin):
+    return bcrypt.hashpw(pin.encode(), bcrypt.gensalt()).decode()
+
+def _check_pin(pin, hashed):
+    return bcrypt.checkpw(pin.encode(), hashed.encode())
+
+def _validate_pin_input(pin):
+    """Return error string or None if valid."""
+    if not pin or not pin.isdigit() or len(pin) != 4:
+        return 'PIN must be exactly 4 digits.'
+    return None
+
+
+# --- Routes ---
+
 @app.route('/')
 def index():
     return render_template_string(USER_SELECTION_TEMPLATE)
@@ -723,14 +1027,146 @@ def index():
 @app.route('/select-user', methods=['POST'])
 def select_user():
     user = request.form.get('user')
-    if user in ['Matthew', 'Joan', 'Sophia Cohen', 'Lauren Bullitt', 'Sophia vanGroningen']:
-        session['user'] = user
-        return redirect(url_for('timesheet'))
-    return redirect(url_for('index'))
+    valid_users = ['Matthew Vargas', 'Joan', 'Sophia Cohen', 'Lauren Bullitt', 'Sophia vanGroningen']
+    if user not in valid_users:
+        return redirect(url_for('index'))
+
+    if user in PIN_PROTECTED_USERS:
+        # Store the intended user in session temporarily (not fully logged in yet)
+        session['pending_user'] = user
+        session.pop('user', None)
+
+        user_doc = _get_user_doc(user)
+        if user_doc and user_doc.get('pin_hash'):
+            # PIN already set — go to entry screen
+            return redirect(url_for('pin_entry', username=user))
+        else:
+            # No PIN yet — go to setup screen
+            return redirect(url_for('pin_set', username=user))
+
+    # Non-protected users go straight in
+    session['user'] = user
+    return redirect(url_for('timesheet'))
+
+
+# PIN setup (first time)
+@app.route('/pin/<username>/set', methods=['GET'])
+def pin_set(username):
+    if username not in PIN_PROTECTED_USERS:
+        return redirect(url_for('index'))
+    if session.get('pending_user') != username:
+        return redirect(url_for('index'))
+    return render_template_string(PIN_SET_TEMPLATE, username=username, error=None)
+
+@app.route('/pin/<username>/set', methods=['POST'])
+def pin_set_post(username):
+    if username not in PIN_PROTECTED_USERS:
+        return redirect(url_for('index'))
+    if session.get('pending_user') != username:
+        return redirect(url_for('index'))
+
+    pin = request.form.get('pin', '')
+    pin_confirm = request.form.get('pin_confirm', '')
+
+    err = _validate_pin_input(pin)
+    if err:
+        return render_template_string(PIN_SET_TEMPLATE, username=username, error=err)
+    if pin != pin_confirm:
+        return render_template_string(PIN_SET_TEMPLATE, username=username, error='PINs do not match. Please try again.')
+
+    pin_hash = _hash_pin(pin)
+    users_collection.update_one(
+        {'username': username},
+        {'$set': {'username': username, 'pin_hash': pin_hash}},
+        upsert=True
+    )
+
+    session.pop('pending_user', None)
+    session['user'] = username
+    return redirect(url_for('timesheet'))
+
+
+# PIN entry (subsequent logins)
+@app.route('/pin/<username>/verify', methods=['GET'])
+def pin_entry(username):
+    if username not in PIN_PROTECTED_USERS:
+        return redirect(url_for('index'))
+    # Allow direct navigation from the reset page's "log in instead" link
+    if session.get('pending_user') != username:
+        session['pending_user'] = username
+        session.pop('user', None)
+    return render_template_string(PIN_ENTRY_TEMPLATE, username=username, error=None)
+
+@app.route('/pin/<username>/verify', methods=['POST'])
+def pin_verify(username):
+    if username not in PIN_PROTECTED_USERS:
+        return redirect(url_for('index'))
+    if session.get('pending_user') != username:
+        return redirect(url_for('index'))
+
+    pin = request.form.get('pin', '')
+    user_doc = _get_user_doc(username)
+
+    if not user_doc or not user_doc.get('pin_hash'):
+        return redirect(url_for('pin_set', username=username))
+
+    if not _check_pin(pin, user_doc['pin_hash']):
+        return render_template_string(PIN_ENTRY_TEMPLATE, username=username, error='Incorrect PIN. Please try again.')
+
+    session.pop('pending_user', None)
+    session['user'] = username
+    return redirect(url_for('timesheet'))
+
+
+# PIN reset (forgot PIN — no auth required, by design)
+@app.route('/pin/<username>/reset', methods=['GET'])
+def pin_reset(username):
+    if username not in PIN_PROTECTED_USERS:
+        return redirect(url_for('index'))
+    return render_template_string(PIN_RESET_TEMPLATE, username=username, error=None, show_login_link=False)
+
+@app.route('/pin/<username>/reset', methods=['POST'])
+def pin_reset_post(username):
+    if username not in PIN_PROTECTED_USERS:
+        return redirect(url_for('index'))
+
+    pin = request.form.get('pin', '')
+    pin_confirm = request.form.get('pin_confirm', '')
+
+    err = _validate_pin_input(pin)
+    if err:
+        return render_template_string(PIN_RESET_TEMPLATE, username=username, error=err, show_login_link=False)
+    if pin != pin_confirm:
+        return render_template_string(PIN_RESET_TEMPLATE, username=username, error='PINs do not match. Please try again.', show_login_link=False)
+
+    # Check if the new PIN is the same as the current one — don't overwrite if so
+    user_doc = _get_user_doc(username)
+    if user_doc and user_doc.get('pin_hash') and _check_pin(pin, user_doc['pin_hash']):
+        return render_template_string(
+            PIN_RESET_TEMPLATE,
+            username=username,
+            error='That\'s the same as your current PIN. Please choose a different one, or log in with your existing PIN.',
+            show_login_link=True
+        )
+
+    # New PIN is different — save it
+    pin_hash = _hash_pin(pin)
+    users_collection.update_one(
+        {'username': username},
+        {'$set': {'username': username, 'pin_hash': pin_hash}},
+        upsert=True
+    )
+
+    # Set pending_user so they land on the verify screen after reset
+    session['pending_user'] = username
+    session.pop('user', None)
+    return redirect(url_for('pin_entry', username=username))
+
 
 @app.route('/switch-user')
 def switch_user():
     session.pop('user', None)
+    session.pop('pending_user', None)
     return redirect(url_for('index'))
 
 @app.route('/timesheet')
@@ -837,6 +1273,30 @@ def import_data():
 
     except Exception as e:
         return jsonify({'error': f'Import failed: {e}'}), 500
+
+
+@app.route('/admin/rename-user', methods=['POST'])
+def rename_user():
+    """
+    One-time migration: renames all timesheets with user='Matthew' to user='Matthew Vargas'.
+
+    Run once from PowerShell:
+        Invoke-RestMethod -Uri http://localhost:5000/admin/rename-user -Method POST
+
+    Or with curl:
+        curl -X POST http://localhost:5000/admin/rename-user
+    """
+    result = timesheets_collection.update_many(
+        {'user': 'Matthew'},
+        {'$set': {'user': 'Matthew Vargas'}}
+    )
+    return jsonify({
+        'success': True,
+        'matched': result.matched_count,
+        'modified': result.modified_count,
+        'message': f'Renamed {result.modified_count} timesheet(s) from "Matthew" to "Matthew Vargas".'
+    })
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
