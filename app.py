@@ -10,7 +10,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Users that require PIN authentication
-PIN_PROTECTED_USERS = ['Matthew Vargas']
+PIN_PROTECTED_USERS = ['Matthew Vargas', 'Joan', 'Sophia Cohen', 'Lauren Bullitt', 'Sophia vanGroningen']
 
 # --- MongoDB connection ---
 def connect_db():
